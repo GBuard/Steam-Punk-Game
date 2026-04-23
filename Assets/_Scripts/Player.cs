@@ -1,5 +1,5 @@
 using UnityEngine;
-using UnityEngine.InputSystem; // Nécessaire pour le nouveau Input System
+using UnityEngine.InputSystem;
 
 public class Player : MonoBehaviour
 {
@@ -7,47 +7,137 @@ public class Player : MonoBehaviour
     public Rigidbody2D rb;
     public PlayerInput playerInput;
 
-    [Header("Movement Settings")]
+    [Header("Movement Variables")]
     public float speed;
-    public Vector2 moveInput;
-    public int facingDirection = 1; // 1 pour la droite, -1 pour la gauche
+    public float jumpForce;
+    public float jumpCutMultiplier; // Pour le saut variable (ex: 0.5f)
+    
+    [Header("Gravity Settings")]
+    public float normalGravity;
+    public float fallGravity;
+    public float jumpGravity;
+
+    [Header("Ground Check")]
+    public Transform groundCheck;
+    public float groundCheckRadius;
+    public LayerMask groundLayer;
+    public bool isGrounded;
+
+    [Header("Input Tracking")]
+    private Vector2 moveInput;
+    private bool jumpPressed;
+    private bool jumpReleased;
+    private int facingDirection = 1;
+
+    private void Start()
+    {
+        // Initialise la gravité au début du jeu
+        rb.gravityScale = normalGravity;
+    }
 
     private void Update()
     {
-        // On vérifie à chaque frame s'il faut retourner le personnage
         Flip();
     }
 
     private void FixedUpdate()
     {
-        // Calcul de la vitesse cible sur l'axe X
-        float targetSpeed = moveInput.x * speed;
+        // On gère la physique dans FixedUpdate
+        CheckGrounded();
+        HandleMovement();
+        HandleJump();
+        ApplyVariableGravity();
+    }
 
-        // Application de la vitesse au Rigidbody
-        // On conserve la vélocité verticale (y) actuelle pour ne pas interférer avec la gravité
+    // --- LOGIQUE DE MOUVEMENT ---
+
+    private void HandleMovement()
+    {
+        float targetSpeed = moveInput.x * speed;
         rb.linearVelocity = new Vector2(targetSpeed, rb.linearVelocity.y);
     }
 
-    // Méthode appelée par le composant Player Input (Action "Move")
+    private void HandleJump()
+    {
+        // Saut initial
+        if (jumpPressed && isGrounded)
+        {
+            rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
+            jumpPressed = false; // On consomme l'input
+            jumpReleased = false;
+        }
+
+        // Coupure du saut (si on relâche le bouton en montant)
+        if (jumpReleased)
+        {
+            if (rb.linearVelocity.y > 0)
+            {
+                rb.linearVelocity = new Vector2(rb.linearVelocity.x, rb.linearVelocity.y * jumpCutMultiplier);
+            }
+            jumpReleased = false;
+        }
+    }
+
+    private void ApplyVariableGravity()
+    {
+        if (rb.linearVelocity.y < -0.1f) // En train de tomber
+        {
+            rb.gravityScale = fallGravity;
+        }
+        else if (rb.linearVelocity.y > 0.1f) // En train de monter
+        {
+            rb.gravityScale = jumpGravity;
+        }
+        else // Au repos ou sur le sol
+        {
+            rb.gravityScale = normalGravity;
+        }
+    }
+
+    // --- INPUTS (New Input System) ---
+
     public void OnMove(InputValue value)
     {
         moveInput = value.Get<Vector2>();
     }
 
+    public void OnJump(InputValue value)
+    {
+        if (value.isPressed)
+        {
+            jumpPressed = true;
+            jumpReleased = false;
+        }
+        else
+        {
+            jumpReleased = true;
+            jumpPressed = false;
+        }
+    }
+
+    // --- UTILITAIRES ---
+
+    private void CheckGrounded()
+    {
+        // Crée un cercle invisible pour détecter le sol
+        isGrounded = Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundLayer);
+    }
+
     private void Flip()
     {
-        // Si on appuie vers la droite et qu'on ne regarde pas déjà vers la droite
-        if (moveInput.x > 0.1f)
-        {
-            facingDirection = 1;
-        }
-        // Si on appuie vers la gauche et qu'on ne regarde pas déjà vers la gauche
-        else if (moveInput.x < -0.1f)
-        {
-            facingDirection = -1;
-        }
+        if (moveInput.x > 0.1f) facingDirection = 1;
+        else if (moveInput.x < -0.1f) facingDirection = -1;
 
-        // Appliquer la direction au scale local du transform pour retourner le sprite et ses enfants
         transform.localScale = new Vector3(facingDirection, 1, 1);
+    }
+
+    // Permet de visualiser le Ground Check dans l'éditeur Unity
+    private void OnDrawGizmosSelected()
+    {
+        if (groundCheck != null)
+        {
+            Gizmos.color = Color.red;
+            Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
+        }
     }
 }
